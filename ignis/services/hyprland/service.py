@@ -13,17 +13,11 @@ class HyprlandService(BaseService):
     """
     Hyprland IPC client.
 
-    Properties:
-        - **workspaces** (``list[dict[str, Any]]``, read-only): A list of workspaces.
-        - **active_workspace** (``Dict[str, Any]``, read-only): The currently active workspace.
-        - **kb_layout** (``str``, read-only): The currenly active keyboard layout.
-        - **active_window** (``Dict[str, Any]``, read-only): The currenly focused window.
-
     Raises:
         HyprlandIPCNotFoundError: If Hyprland IPC is not found.
 
     .. note::
-        The contents of "dictionary" (``Dict``) properties are not described here.
+        The contents of ``dict`` properties are not described here.
         To find out their contents just print them into the terminal.
 
         >>> print(hyprland.workspaces)
@@ -76,7 +70,7 @@ class HyprlandService(BaseService):
             "focusHistoryID": 0,
         }
 
-    **Example usage:**
+    Example usage:
 
     .. code-block:: python
 
@@ -100,52 +94,67 @@ class HyprlandService(BaseService):
         self._kb_layout: str = ""
         self._active_window: dict[str, Any] = {}
 
-        self.__listen_socket()
+        self.__listen_events()
+
         self.__sync_kb_layout()
         self.__sync_workspaces()
         self.__sync_active_window()
 
     @GObject.Property
     def workspaces(self) -> list[dict[str, Any]]:
+        """
+        - read-only
+
+        A list of workspaces.
+        """
         return self._workspaces
 
     @GObject.Property
     def active_workspace(self) -> dict[str, Any]:
+        """
+        - read-only
+
+        The currently active workspace.
+        """
         return self._active_workspace
 
     @GObject.Property
     def kb_layout(self) -> str:
+        """
+        - read-only
+
+        The currenly active keyboard layout.
+        """
         return self._kb_layout
 
     @GObject.Property
     def active_window(self) -> dict[str, Any]:
+        """
+        - read-only
+
+        The currenly focused window.
+        """
         return self._active_window
 
     @Utils.run_in_thread
-    def __listen_socket(self) -> None:
+    def __listen_events(self) -> None:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
             sock.connect(f"{HYPR_SOCKET_DIR}/.socket2.sock")
-            while True:
-                try:
-                    data = sock.recv(1024).decode("utf-8")
-                    self.__on_data_received(data)
-                except (UnicodeDecodeError, json.decoder.JSONDecodeError):
-                    pass
+            for event in Utils.listen_socket(sock):
+                self.__on_event_received(event)
 
-    def __on_data_received(self, data: str) -> None:
-        data_list = data.split("\n")
-        for d in data_list:
-            if (
-                d.startswith("workspace>>")
-                or d.startswith("destroyworkspace>>")
-                or d.startswith("focusedmon>>")
-            ):
-                self.__sync_workspaces()
-            elif d.startswith("activelayout>>"):
-                self.__sync_kb_layout()
+    def __on_event_received(self, event: str) -> None:
+        if (
+            event.startswith("workspace>>")
+            or event.startswith("destroyworkspace>>")
+            or event.startswith("focusedmon>>")
+        ):
+            self.__sync_workspaces()
+        elif event.startswith("activelayout>>"):
+            self.__sync_kb_layout()
 
-            elif d.startswith("activewindow>>"):
-                self.__sync_active_window()
+        elif event.startswith("activewindow>>"):
+            self.__sync_active_window()
 
     def __sync_workspaces(self) -> None:
         self._workspaces = sorted(
@@ -167,25 +176,23 @@ class HyprlandService(BaseService):
 
     def send_command(self, cmd: str) -> str:
         """
-        Send command to Hyprland IPC.
-        Supported the same commands as in hyprctl.
-        If you want to get response as JSON use this syntax: ``j/COMMAND``.
+        Send a command to the Hyprland IPC.
+        Supports the same commands as ``hyprctl``.
+        If you want to receive the response in JSON format, use this syntax: ``j/COMMAND``.
 
         Args:
-            cmd (``str``): A command.
+            cmd: The command to send.
 
         Returns:
             Response from Hyprland IPC.
         """
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
             sock.connect(f"{HYPR_SOCKET_DIR}/.socket.sock")
-            sock.send(cmd.encode())
-            resp = sock.recv(4096).decode()
-            return resp
+            return Utils.send_socket(sock, cmd)
 
     def switch_kb_layout(self) -> None:
         """
-        Just switch to next keyboard layout.
+        Switch to the next keyboard layout.
         """
         for kb in json.loads(self.send_command("j/devices"))["keyboards"]:
             if kb["main"]:
@@ -193,9 +200,9 @@ class HyprlandService(BaseService):
 
     def switch_to_workspace(self, workspace_id: int) -> None:
         """
-        Switch to workspace by ID.
+        Switch to a workspace by its ID.
 
         Args:
-            workspace_id (``int``): ID of workspace to be switched to
+            workspace_id: The ID of the workspace to switch to.
         """
         self.send_command(f"dispatch workspace {workspace_id}")
