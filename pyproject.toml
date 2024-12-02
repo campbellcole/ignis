@@ -11,7 +11,7 @@ authors = [
 
 [build-system]
 build-backend = 'mesonpy'
-requires = ['meson-python']
+requires = ['meson-python', 'setuptools']
 
 [tool.setuptools]
 py-modules = []
