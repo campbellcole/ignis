@@ -13,6 +13,9 @@ authors = [
 build-backend = 'mesonpy'
 requires = ['meson-python', 'setuptools']
 
+[tool.meson-python.args]
+install = ['--skip-subprojects']
+
 [tool.setuptools]
 py-modules = []
 
